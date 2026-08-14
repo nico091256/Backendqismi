@@ -1,0 +1,22 @@
+// This is your Prisma schema file.
+// Learn more about it at: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Problem {
+  id           Int       @id @default(autoincrement())
+  ticketNumber String    @unique
+  room         String
+  computer     String
+  description  String
+  status       String    @default("NEW")
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+}
