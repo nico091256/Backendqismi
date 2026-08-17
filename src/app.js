@@ -13,32 +13,15 @@ const app = express();
 // ─────────────────────────────────────────────
 // CORS
 // ─────────────────────────────────────────────
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-  : [];
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      
-      if (
-        allowedOrigins.length === 0 ||
-        allowedOrigins.includes('*') ||
-        allowedOrigins.includes(origin) ||
-        /\.vercel\.app$/.test(new URL(origin).hostname) ||
-        /\.onrender\.com$/.test(new URL(origin).hostname) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-      ) {
-        return callback(null, true);
-      }
-      return callback(null, true);
-    },
+    origin: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   })
 );
+app.options('*', cors());
 
 // ─────────────────────────────────────────────
 // Body parser
