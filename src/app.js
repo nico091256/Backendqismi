@@ -15,21 +15,24 @@ const app = express();
 // ─────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-  : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174'];
+  : [];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow server-to-server, localhost ports, and configured origins
+      if (!origin) return callback(null, true);
+      
       if (
-        !origin ||
+        allowedOrigins.length === 0 ||
+        allowedOrigins.includes('*') ||
         allowedOrigins.includes(origin) ||
+        /\.vercel\.app$/.test(new URL(origin).hostname) ||
+        /\.onrender\.com$/.test(new URL(origin).hostname) ||
         /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
       ) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin "${origin}" is not allowed`));
+        return callback(null, true);
       }
+      return callback(null, true);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
