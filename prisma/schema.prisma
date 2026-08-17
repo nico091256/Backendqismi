@@ -11,12 +11,59 @@ datasource db {
 }
 
 model Problem {
-  id           Int       @id @default(autoincrement())
-  ticketNumber String    @unique
-  room         String
-  computer     String
-  description  String
-  status       String    @default("NEW")
-  createdAt    DateTime  @default(now())
+  id           Int      @id @default(autoincrement())
+  ticketNumber String   @unique
+
+  // Murojaat turi: "Texnik muammo" | "Jihoz so'rovi"
+  type         String   @default("Texnik muammo")
+
+  // ── Shaxsiy ma'lumotlar (barchasi majburiy) ──
+  lastName     String   @default("")
+  firstName    String   @default("")
+  middleName   String   @default("")
+  position     String   @default("")
+  objectName   String   @default("")
+  phone        String   @default("")
+
+  // ── Texnik muammo uchun ──
+  room         String?
+  computer     String?
+  description  String?
+
+  // ── Jihoz so'rovi uchun ──
+  requestedItem String?
+  quantity      Int?
+
+  // ── Holat ──
+  status       String   @default("NEW")
+  createdAt    DateTime @default(now())
   resolvedAt   DateTime?
+  updatedAt    DateTime @updatedAt
+}
+
+// ── Foydalanuvchi (IT Support xodimi yoki Manager) ──
+model User {
+  id        Int      @id @default(autoincrement())
+  fullName  String
+  phone     String   @unique
+  password  String   // bcrypt hash
+  role      String   @default("IT_SUPPORT") // IT_SUPPORT | MANAGER
+  token     String?  @unique  // sessiya tokeni (UUID)
+  createdAt DateTime @default(now())
+  tasks     Task[]   @relation("AssignedTo")
+}
+
+// ── Manager tomonidan IT Support xodimiga beriladigan topshiriq ──
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String
+  priority    String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  status      String    @default("PENDING") // PENDING | IN_PROGRESS | DONE
+  deadline    DateTime?
+  assignedTo  Int
+  worker      User      @relation("AssignedTo", fields: [assignedTo], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
 }

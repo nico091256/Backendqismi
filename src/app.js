@@ -5,6 +5,8 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
 const problemRoutes = require('./routes/problemRoutes');
+const authRoutes    = require('./routes/authRoutes');
+const taskRoutes    = require('./routes/taskRoutes');
 
 const app = express();
 
@@ -30,7 +32,7 @@ app.use(
       }
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-admin-key', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   })
 );
@@ -42,15 +44,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // ─────────────────────────────────────────────
-// Rate limiting – 100 requests / 15 min per IP
+// Rate limiting
 // ─────────────────────────────────────────────
+const isDev = process.env.NODE_ENV !== 'production';
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 2000, // 2000 requests per 15 min
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => isDev || req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1',
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
+
 app.use('/api/', limiter);
 
 // ─────────────────────────────────────────────
@@ -60,29 +66,23 @@ app.get('/api/health', (_req, res) => {
   res.json({ success: true, message: 'IT Support API is running' });
 });
 
-const { requireAdminAuth } = require('./middlewares/authMiddleware');
-
-// ─────────────────────────────────────────────
-// Admin Auth Verification
-// ─────────────────────────────────────────────
-app.post('/api/auth/verify-admin', (req, res) => {
-  const { password } = req.body;
-  const expectedPassword = process.env.ADMIN_PASSWORD || 'ITadmin2026';
-
-  if (!password || password !== expectedPassword) {
-    return res.status(401).json({ success: false, message: "Noto'g'ri admin paroli" });
-  }
-
-  res.json({ success: true, message: 'Admin paroli tasdiqlandi' });
-});
+const { requireAuth } = require('./middlewares/authMiddleware');
 
 // ─────────────────────────────────────────────
 // API routes
 // ─────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/tasks', taskRoutes);
 app.use('/api/problems', problemRoutes);
 
-// GET /api/stats  –  Analytics & reports (Faqat IT Support)
-app.get('/api/stats', requireAdminAuth, require('./controllers/problemController').getStats);
+// GET /api/users — Foydalanuvchilar ro'yxati (Manager uchun)
+app.get('/api/users', requireAuth, require('./controllers/taskController').getUsers);
+
+// DELETE /api/users/:id — Xodim hisobini o'chirish (Manager uchun)
+app.delete('/api/users/:id', requireAuth, require('./controllers/taskController').deleteUser);
+
+// GET /api/stats — Hisobotlar (IT Support)
+app.get('/api/stats', requireAuth, require('./controllers/problemController').getStats);
 
 // ─────────────────────────────────────────────
 // 404 handler – unknown routes

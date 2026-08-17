@@ -5,25 +5,36 @@ const {
   getProblemById,
   resolveProblem,
   deleteProblem,
+  exportProblems,
+  updateProblem,
 } = require('../controllers/problemController');
-const { requireAdminAuth } = require('../middlewares/authMiddleware');
+const { requireAuth } = require('../middlewares/authMiddleware');
 
 const router = Router();
 
-// POST   /api/problems              – submit a new problem (Ochiq - barcha xodimlar uchun)
+// POST   /api/problems              – murojaat yuborish (Ochiq - barcha xodimlar uchun)
 router.post('/', createProblem);
 
-// GET    /api/problems              – list all problems (Faqat IT Support)
-router.get('/', requireAdminAuth, getAllProblems);
+// GET    /api/problems/export       – Excel yuklab olish (Faqat IT Support / Manager)
+// MUHIM: Bu yo'l /:id dan OLDIN joylashishi kerak!
+router.get('/export', requireAuth, exportProblems);
 
-// GET    /api/problems/:id          – get one problem (Faqat IT Support)
-router.get('/:id', requireAdminAuth, getProblemById);
+// GET    /api/problems              – barcha murojaatlar (Faqat IT Support / Manager)
+router.get('/', requireAuth, getAllProblems);
 
-// PATCH  /api/problems/:id/resolve  – mark as resolved (Faqat IT Support)
-router.patch('/:id/resolve', requireAdminAuth, resolveProblem);
+// GET    /api/problems/:id          – bitta murojaat (Faqat IT Support / Manager)
+router.get('/:id', requireAuth, getProblemById);
 
-// DELETE /api/problems/:id          – delete permanently (Faqat IT Support)
-router.delete('/:id', requireAdminAuth, deleteProblem);
+// PATCH  /api/problems/:id          – murojaatni tahrirlash (Faqat IT Support / Manager)
+router.patch('/:id', requireAuth, updateProblem);
+
+// PATCH  /api/problems/:id/resolve  – hal qilindi (Faqat IT Support / Manager)
+router.patch('/:id/resolve', requireAuth, resolveProblem);
+
+// DELETE /api/problems/:id          – o'chirish (Faqat IT Support / Manager)
+router.delete('/:id', requireAuth, deleteProblem);
 
 module.exports = router;
+
+
 
