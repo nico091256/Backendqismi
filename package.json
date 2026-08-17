@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "build": "prisma generate && prisma db push",
     "start": "node src/server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
@@ -19,10 +20,10 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
+    "prisma": "^5.22.0",
     "uuid": "^14.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7",
-    "prisma": "^5.22.0"
+    "nodemon": "^3.1.7"
   }
 }
