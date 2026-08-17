@@ -6,6 +6,18 @@ const prisma = new PrismaClient();
 
 const VALID_ROLES = ['IT_SUPPORT', 'MANAGER'];
 
+// Telefon raqamni tozalash va standart formatga keltirish (+998901234567)
+function normalizePhone(raw) {
+  if (!raw) return '';
+  let cleaned = raw.trim().replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('998') && !cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  } else if (/^\d{9}$/.test(cleaned)) {
+    cleaned = '+998' + cleaned;
+  }
+  return cleaned;
+}
+
 // ─────────────────────────────────────────────
 // POST /api/auth/register
 // ─────────────────────────────────────────────
@@ -18,6 +30,8 @@ async function register(req, res, next) {
     if (!phone?.trim())     return res.status(400).json({ success: false, message: 'Telefon raqam kiritilmagan' });
     if (!password?.trim())  return res.status(400).json({ success: false, message: 'Parol kiritilmagan' });
     if (password.length < 4) return res.status(400).json({ success: false, message: "Parol kamida 4 ta belgidan iborat bo'lishi kerak" });
+
+    const cleanPhone = normalizePhone(phone);
 
     const selectedRole = role || 'IT_SUPPORT';
     if (!VALID_ROLES.includes(selectedRole)) {
@@ -32,8 +46,16 @@ async function register(req, res, next) {
       }
     }
 
-    // Telefon raqam mavjudligini tekshirish
-    const existing = await prisma.user.findUnique({ where: { phone: phone.trim() } });
+    // Telefon raqam mavjudligini tekshirish (tozalangan yoki kiritilgan ko'rinishda)
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: phone.trim() },
+        ],
+      },
+    });
+
     if (existing) {
       return res.status(409).json({ success: false, message: 'Bu telefon raqam allaqachon ro\'yxatdan o\'tgan' });
     }
@@ -45,7 +67,7 @@ async function register(req, res, next) {
     const user = await prisma.user.create({
       data: {
         fullName: fullName.trim(),
-        phone: phone.trim(),
+        phone: cleanPhone,
         password: hashedPassword,
         role: selectedRole,
         token,
@@ -69,7 +91,17 @@ async function login(req, res, next) {
     if (!phone?.trim())    return res.status(400).json({ success: false, message: 'Telefon raqam kiritilmagan' });
     if (!password?.trim()) return res.status(400).json({ success: false, message: 'Parol kiritilmagan' });
 
-    const user = await prisma.user.findUnique({ where: { phone: phone.trim() } });
+    const cleanPhone = normalizePhone(phone);
+
+    // Telefon raqamni toza formatda ham, to'g'ridan-to'g'ri kiritilgan formatda ham qidirish
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: phone.trim() },
+        ],
+      },
+    });
 
     if (!user) {
       return res.status(401).json({ success: false, message: "Telefon raqam yoki parol noto'g'ri" });
