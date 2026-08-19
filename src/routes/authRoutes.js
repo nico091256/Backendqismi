@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { register, login, logout, getMe, updateProfile, changePassword } = require('../controllers/authController');
+const { register, login, logout, getMe, updateProfile, changePassword, resetAllUsers } = require('../controllers/authController');
 const { requireAuth } = require('../middlewares/authMiddleware');
 const { validate, registerSchema, loginSchema } = require('../middlewares/validateMiddleware');
 
@@ -23,5 +23,9 @@ router.patch('/profile', requireAuth, updateProfile);
 // PATCH /api/auth/change-password — Parol o'zgartirish
 router.patch('/change-password', requireAuth, changePassword);
 
+// POST /api/auth/reset-users — Barcha userlarni tozalash (Admin secret bilan)
+router.post('/reset-users', resetAllUsers);
+
 module.exports = router;
+
 

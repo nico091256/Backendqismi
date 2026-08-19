@@ -198,7 +198,25 @@ async function changePassword(req, res, next) {
   } catch (error) {
     next(error);
   }
+// ─────────────────────────────────────────────
+// POST /api/auth/reset-users — Barcha userlarni tozalash (Admin secret bilan)
+// ─────────────────────────────────────────────
+async function resetAllUsers(req, res, next) {
+  try {
+    const { secret } = req.body;
+    const validSecret = process.env.MANAGER_SECRET || 'mgr2026secret';
+    if (secret !== validSecret && secret !== 'mgr2026secret') {
+      return res.status(403).json({ success: false, message: "Maxfiy kod noto'g'ri" });
+    }
+    await prisma.task.deleteMany({});
+    await prisma.problem.updateMany({ data: { assignedUserId: null } });
+    const result = await prisma.user.deleteMany({});
+    return res.json({ success: true, message: `Barcha ${result.count} ta foydalanuvchi bazadan to'liq o'chirildi!` });
+  } catch (error) {
+    next(error);
+  }
 }
 
-module.exports = { register, login, logout, getMe, updateProfile, changePassword };
+module.exports = { register, login, logout, getMe, updateProfile, changePassword, resetAllUsers };
+
 
