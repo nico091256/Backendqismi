@@ -116,9 +116,11 @@ async function createProblem(req, res, next) {
           (problem.description ? `📝 <b>Tavsif:</b>\n<i>${problem.description}</i>\n\n` : '') +
           `⏰ <b>Kelgan vaqti:</b> ${new Date().toLocaleString('uz-UZ')}`;
 
-        for (const u of usersWithTg) {
-          sendTelegramNotification(u.telegramChatId, text).catch(() => {});
-        }
+        const promises = usersWithTg
+          .filter(u => u.telegramChatId && u.telegramChatId.trim())
+          .map(u => sendTelegramNotification(u.telegramChatId.trim(), text));
+
+        await Promise.allSettled(promises);
       }
     } catch (e) {
       console.warn('[Telegram Broadcast Warn]', e.message);

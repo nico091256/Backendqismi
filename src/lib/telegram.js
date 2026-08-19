@@ -1,4 +1,4 @@
-﻿const https = require('https');
+const https = require('https');
 
 /**
  * Send a formatted message to a Telegram User/Chat
@@ -6,10 +6,13 @@
  * @param {string} text (HTML supported)
  */
 async function sendTelegramNotification(chatId, text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  let token = process.env.TELEGRAM_BOT_TOKEN;
+  if (token) {
+    token = token.trim().replace(/^["']|["']$/g, '');
+  }
+  // Agar Render.com da kiritilmagan bo'lsa zaxira token
   if (!token) {
-    console.warn('[Telegram] TELEGRAM_BOT_TOKEN kiritilmagan');
-    return { success: false, reason: 'No token' };
+    token = '8974099262:AAHwpvd0kPMppTRxo1ZC0PcsgSqgOQDts2w';
   }
 
   if (!chatId) {
