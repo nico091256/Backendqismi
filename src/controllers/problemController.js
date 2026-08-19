@@ -1,7 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const ExcelJS = require('exceljs');
-
-const prisma = new PrismaClient();
+const { sendTelegramNotification } = require('../lib/telegram');
 
 // Ruxsat etilgan murojaat turlari
 const VALID_TYPES = ["Texnik muammo", "Jihoz so'rovi"];
@@ -13,8 +12,28 @@ const VALID_TYPES = ["Texnik muammo", "Jihoz so'rovi"];
 // ─────────────────────────────────────────────
 async function generateTicketNumber(type) {
   const prefix = type === "Jihoz so'rovi" ? 'JS' : 'TM';
-  const count = await prisma.problem.count({ where: { type } });
-  return `${prefix}-${1001 + count}`;
+  
+  const lastProblem = await prisma.problem.findFirst({
+    where: { ticketNumber: { startsWith: `${prefix}-` } },
+    orderBy: { id: 'desc' },
+    select: { ticketNumber: true },
+  });
+
+  let nextNum = 1001;
+  if (lastProblem && lastProblem.ticketNumber) {
+    const parts = lastProblem.ticketNumber.split('-');
+    const parsed = parseInt(parts[1], 10);
+    if (!isNaN(parsed)) {
+      nextNum = parsed + 1;
+    }
+  }
+
+  while (true) {
+    const candidate = `${prefix}-${nextNum}`;
+    const exists = await prisma.problem.findUnique({ where: { ticketNumber: candidate } });
+    if (!exists) return candidate;
+    nextNum++;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -79,6 +98,32 @@ async function createProblem(req, res, next) {
       },
     });
 
+    // Yangi murojaat kelib tushishi bilan barcha ulangan xodimlarga / botga bildirishnoma yuborish
+    try {
+      const usersWithTg = await prisma.user.findMany({
+        where: { telegramChatId: { not: null } },
+        select: { telegramChatId: true },
+      });
+
+      if (usersWithTg.length > 0) {
+        const isTM = problem.type === 'Texnik muammo';
+        const text = `🔔 <b>YANGI MUROJAAT KELIB TUSHDI!</b>\n\n` +
+          `📋 <b>Ticket:</b> <code>${problem.ticketNumber}</code> (${problem.type})\n` +
+          `👤 <b>Xodim:</b> ${problem.lastName} ${problem.firstName} ${problem.middleName || ''}\n` +
+          `🏢 <b>Obyekt / Bo'lim:</b> ${problem.objectName || '—'}\n` +
+          (isTM ? `🚪 <b>Xona:</b> ${problem.room || '—'} | 🖥️ <b>PC:</b> ${problem.computer || '—'}\n` : `📦 <b>Jihoz:</b> ${problem.requestedItem || '—'} (${problem.quantity || 1} ta)\n`) +
+          `📞 <b>Telefon:</b> ${problem.phone || '—'}\n\n` +
+          (problem.description ? `📝 <b>Tavsif:</b>\n<i>${problem.description}</i>\n\n` : '') +
+          `⏰ <b>Kelgan vaqti:</b> ${new Date().toLocaleString('uz-UZ')}`;
+
+        for (const u of usersWithTg) {
+          sendTelegramNotification(u.telegramChatId, text).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('[Telegram Broadcast Warn]', e.message);
+    }
+
     return res.status(201).json({ success: true, problem });
   } catch (error) {
     next(error);
@@ -114,6 +159,7 @@ async function getAllProblems(req, res, next) {
     const problems = await prisma.problem.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      include: { assignedUser: { select: { id: true, fullName: true, phone: true } } },
     });
 
     return res.json({ success: true, problems });
@@ -166,11 +212,14 @@ async function resolveProblem(req, res, next) {
       return res.status(400).json({ success: false, message: 'Problem is already resolved' });
     }
 
+    const { resolveNote } = req.body;
+
     const problem = await prisma.problem.update({
       where: { id },
       data: {
         status: 'RESOLVED',
         resolvedAt: new Date(),
+        resolveNote: resolveNote ? resolveNote.trim() : null,
       },
     });
 
@@ -542,6 +591,108 @@ async function updateProblem(req, res, next) {
   }
 }
 
+// ─────────────────────────────────────────────
+// GET /api/problems/check/:ticket  –  Ticket holati tekshirish (ochiq)
+// ─────────────────────────────────────────────
+async function checkTicket(req, res, next) {
+  try {
+    const { ticket } = req.params;
+    if (!ticket) return res.status(400).json({ success: false, message: 'Ticket raqami kiritilmagan' });
+
+    const problem = await prisma.problem.findUnique({
+      where: { ticketNumber: ticket.toUpperCase() },
+      select: {
+        ticketNumber: true, type: true, status: true,
+        firstName: true, lastName: true,
+        room: true, computer: true, description: true,
+        requestedItem: true,
+        createdAt: true, resolvedAt: true, resolveNote: true,
+        assignedUser: { select: { fullName: true } },
+      },
+    });
+
+    if (!problem) {
+      return res.status(404).json({ success: false, message: 'Bunday ticket topilmadi' });
+    }
+
+    return res.json({ success: true, problem });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─────────────────────────────────────────────
+// GET /api/problems/new-count  –  Yangi murojaatlar soni (bildirishnoma polling)
+// ─────────────────────────────────────────────
+async function getNewCount(req, res, next) {
+  try {
+    // since parametri berilsa — faqat o'sha vaqtdan keyingilarni sanaydi
+    const { since } = req.query;
+    const where = { status: 'NEW' };
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate)) where.createdAt = { gt: sinceDate };
+    }
+    const count = await prisma.problem.count({ where });
+    return res.json({ success: true, count });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─────────────────────────────────────────────
+// PATCH /api/problems/:id/assign  –  Murojaatni xodimga biriktirish
+// ─────────────────────────────────────────────
+async function assignProblem(req, res, next) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid problem ID' });
+
+    const { userId } = req.body;
+
+    // userId null bo'lsa — biriktirishni olib tashlaymiz
+    if (userId === null || userId === undefined) {
+      const problem = await prisma.problem.update({
+        where: { id },
+        data: { assignedUserId: null },
+        include: { assignedUser: { select: { id: true, fullName: true, phone: true } } },
+      });
+      return res.json({ success: true, problem });
+    }
+
+    const uid = parseInt(userId, 10);
+    const worker = await prisma.user.findUnique({ where: { id: uid } });
+    if (!worker || worker.role !== 'IT_SUPPORT') {
+      return res.status(404).json({ success: false, message: 'IT Support xodimi topilmadi' });
+    }
+
+    const problem = await prisma.problem.update({
+      where: { id },
+      data: { assignedUserId: uid },
+      include: { assignedUser: { select: { id: true, fullName: true, phone: true, telegramChatId: true } } },
+    });
+
+    // Send Telegram Notification to the worker if telegramChatId is set
+    if (worker.telegramChatId) {
+      const isTM = problem.type === 'Texnik muammo';
+      const text = `📥 <b>SIZGA YANGI MUROJAAT BIRIKTIRILDI</b>\n\n` +
+        `📋 <b>Ticket:</b> <code>${problem.ticketNumber}</code> (${problem.type})\n` +
+        `👤 <b>Xodim:</b> ${problem.lastName} ${problem.firstName} ${problem.middleName || ''}\n` +
+        `🏢 <b>Obyekt:</b> ${problem.objectName || '—'}\n` +
+        (isTM ? `🚪 <b>Xona:</b> ${problem.room || '—'} | 🖥️ <b>PC:</b> ${problem.computer || '—'}\n` : `📦 <b>Jihoz:</b> ${problem.requestedItem || '—'} (${problem.quantity || 1} ta)\n`) +
+        `📞 <b>Telefon:</b> ${problem.phone || '—'}\n\n` +
+        (problem.description ? `📝 <b>Tavsif:</b>\n<i>${problem.description}</i>\n\n` : '') +
+        `⏰ <b>Biriktirilgan vaqt:</b> ${new Date().toLocaleString('uz-UZ')}`;
+
+      sendTelegramNotification(worker.telegramChatId, text).catch(() => {});
+    }
+
+    return res.json({ success: true, problem });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createProblem,
   getAllProblems,
@@ -551,5 +702,8 @@ module.exports = {
   exportProblems,
   getStats,
   updateProblem,
+  checkTicket,
+  getNewCount,
+  assignProblem,
 };
 

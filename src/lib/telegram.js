@@ -1,0 +1,66 @@
+﻿const https = require('https');
+
+/**
+ * Send a formatted message to a Telegram User/Chat
+ * @param {string|number} chatId
+ * @param {string} text (HTML supported)
+ */
+async function sendTelegramNotification(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn('[Telegram] TELEGRAM_BOT_TOKEN kiritilmagan');
+    return { success: false, reason: 'No token' };
+  }
+
+  if (!chatId) {
+    return { success: false, reason: 'No chatId' };
+  }
+
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      parse_mode: 'HTML',
+    });
+
+    const options = {
+      hostname: 'api.telegram.org',
+      port: 443,
+      path: '/bot' + token + '/sendMessage',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.ok) {
+            console.log('[Telegram Notification] Yuborildi:', chatId);
+            resolve({ success: true });
+          } else {
+            console.warn('[Telegram Notification Error]', parsed.description);
+            resolve({ success: false, reason: parsed.description });
+          }
+        } catch (e) {
+          resolve({ success: false, reason: e.message });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.warn('[Telegram Connection Error]', err.message);
+      resolve({ success: false, reason: err.message });
+    });
+
+    req.write(payload);
+    req.end();
+  });
+}
+
+module.exports = { sendTelegramNotification };

@@ -1,25 +1,34 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
-const express = require('express');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
+const express    = require('express');
+const rateLimit  = require('express-rate-limit');
 
 const problemRoutes = require('./routes/problemRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const taskRoutes    = require('./routes/taskRoutes');
+const userRoutes    = require('./routes/userRoutes');
+const statsRoutes   = require('./routes/statsRoutes');
 
 const app = express();
 
 // ─────────────────────────────────────────────
-// CORS (Bulletproof for Cloudflare, Vercel, Render)
+// CORS — faqat ruxsat etilgan originlar
 // ─────────────────────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const isDev = process.env.NODE_ENV !== 'production';
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (isDev || !origin || ALLOWED_ORIGINS.includes(origin)) {
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    else        res.setHeader('Access-Control-Allow-Origin', '*');
   }
+
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS, PUT');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With, Origin');
@@ -30,7 +39,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
 // ─────────────────────────────────────────────
 // Body parser
 // ─────────────────────────────────────────────
@@ -40,18 +48,30 @@ app.use(express.urlencoded({ extended: false }));
 // ─────────────────────────────────────────────
 // Rate limiting
 // ─────────────────────────────────────────────
-const isDev = process.env.NODE_ENV !== 'production';
 
+// Umumiy limit
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 2000, // 2000 requests per 15 min
+  windowMs: 15 * 60 * 1000, // 15 daqiqa
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => isDev || req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1',
-  message: { success: false, message: 'Too many requests, please try again later.' },
+  message: { success: false, message: "Juda ko'p so'rov. Iltimos, keyinroq urinib ko'ring." },
+});
+
+// Login uchun qattiqroq limit
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 daqiqa
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isDev || req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1',
+  message: { success: false, message: "Juda ko'p urinish. 15 daqiqadan keyin qayta urinib ko'ring." },
 });
 
 app.use('/api/', limiter);
+app.use('/api/auth/login',    authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 // ─────────────────────────────────────────────
 // Health check
@@ -60,26 +80,17 @@ app.get('/api/health', (_req, res) => {
   res.json({ success: true, message: 'IT Support API is running' });
 });
 
-const { requireAuth } = require('./middlewares/authMiddleware');
-
 // ─────────────────────────────────────────────
 // API routes
 // ─────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/tasks', taskRoutes);
+app.use('/api/auth',     authRoutes);
+app.use('/api/tasks',    taskRoutes);
 app.use('/api/problems', problemRoutes);
-
-// GET /api/users — Foydalanuvchilar ro'yxati (Manager uchun)
-app.get('/api/users', requireAuth, require('./controllers/taskController').getUsers);
-
-// DELETE /api/users/:id — Xodim hisobini o'chirish (Manager uchun)
-app.delete('/api/users/:id', requireAuth, require('./controllers/taskController').deleteUser);
-
-// GET /api/stats — Hisobotlar (IT Support)
-app.get('/api/stats', requireAuth, require('./controllers/problemController').getStats);
+app.use('/api/users',    userRoutes);
+app.use('/api/stats',    statsRoutes);
 
 // ─────────────────────────────────────────────
-// 404 handler – unknown routes
+// 404 handler
 // ─────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
@@ -90,8 +101,6 @@ app.use((_req, res) => {
 // ─────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  const isDev = process.env.NODE_ENV !== 'production';
-
   console.error('[ERROR]', err.message);
 
   res.status(err.status || 500).json({

@@ -1,9 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+﻿const jwt    = require('jsonwebtoken');
+const prisma = require('../lib/prisma');
 
 // ─────────────────────────────────────────────
-// Token orqali autentifikatsiya (har ikki rol)
+// JWT orqali autentifikatsiya (har ikki rol)
 // Header: Authorization: Bearer <token>
 // ─────────────────────────────────────────────
 async function requireAuth(req, res, next) {
@@ -12,16 +11,27 @@ async function requireAuth(req, res, next) {
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
     if (!token) {
-      return res.status(401).json({ success: false, message: "Kirish uchun token talab qilinadi" });
+      return res.status(401).json({ success: false, message: 'Kirish uchun token talab qilinadi' });
     }
 
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      const message = err.name === 'TokenExpiredError'
+        ? 'Sessiya muddati tugagan, qayta kiring'
+        : "Noto'g'ri token";
+      return res.status(401).json({ success: false, message });
+    }
+
+    // Foydalanuvchi hali ham mavjudligini tekshirish
     const user = await prisma.user.findUnique({
-      where: { token },
-      select: { id: true, fullName: true, phone: true, role: true, token: true },
+      where: { id: decoded.id },
+      select: { id: true, fullName: true, phone: true, role: true },
     });
 
     if (!user) {
-      return res.status(401).json({ success: false, message: "Sessiya muddati tugagan yoki noto'g'ri token" });
+      return res.status(401).json({ success: false, message: 'Foydalanuvchi topilmadi' });
     }
 
     req.user = user;
@@ -37,7 +47,7 @@ async function requireAuth(req, res, next) {
 async function requireManagerAuth(req, res, next) {
   await requireAuth(req, res, async () => {
     if (req.user?.role !== 'MANAGER') {
-      return res.status(403).json({ success: false, message: "Faqat Manager uchun ruxsat berilgan" });
+      return res.status(403).json({ success: false, message: 'Faqat Manager uchun ruxsat berilgan' });
     }
     next();
   });

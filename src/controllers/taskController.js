@@ -1,6 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
+const { sendTelegramNotification } = require('../lib/telegram');
 
 const VALID_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 const VALID_STATUSES   = ['PENDING', 'IN_PROGRESS', 'DONE'];
@@ -64,8 +63,28 @@ async function createTask(req, res, next) {
         deadline: deadline ? new Date(deadline) : null,
         assignedTo: parseInt(assignedTo, 10),
       },
-      include: { worker: { select: { id: true, fullName: true, phone: true } } },
+      include: { worker: { select: { id: true, fullName: true, phone: true, telegramChatId: true } } },
     });
+
+    // Send Telegram Notification to the worker if telegramChatId is set
+    if (worker.telegramChatId) {
+      const priorityIcons = {
+        URGENT: '🔴 Shoshilinch',
+        HIGH:   '🟡 Yuqori',
+        NORMAL: '🔵 Normal',
+        LOW:    '🟢 Past',
+      };
+      const dlStr = task.deadline ? new Date(task.deadline).toLocaleDateString('uz-UZ') : 'Belgilanmagan';
+      const text = `📋 <b>SIZGA YANGI TOPSHIRIQ YUKLANDI</b>\n\n` +
+        `📌 <b>Sarlavha:</b> ${task.title}\n` +
+        `⚡ <b>Muhimlik darajasi:</b> ${priorityIcons[task.priority] || task.priority}\n` +
+        `📅 <b>Muddat (Deadline):</b> ${dlStr}\n\n` +
+        `📝 <b>Topshiriq tavsifi:</b>\n<i>${task.description}</i>\n\n` +
+        `👔 <b>Topshiruvchi:</b> ${req.user.fullName} (Manager)\n` +
+        `⏰ <b>Vaqti:</b> ${new Date().toLocaleString('uz-UZ')}`;
+
+      sendTelegramNotification(worker.telegramChatId, text).catch(() => {});
+    }
 
     return res.status(201).json({ success: true, task });
   } catch (error) {

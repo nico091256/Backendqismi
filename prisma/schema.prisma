@@ -36,21 +36,27 @@ model Problem {
 
   // ── Holat ──
   status       String   @default("NEW")
+  resolveNote  String?  // Hal qilish izohi (#3)
   createdAt    DateTime @default(now())
   resolvedAt   DateTime?
   updatedAt    DateTime @updatedAt
+
+  // ── Xodimga biriktirish (#7) ──
+  assignedUserId Int?
+  assignedUser   User?  @relation("AssignedWorker", fields: [assignedUserId], references: [id], onDelete: SetNull)
 }
 
 // ── Foydalanuvchi (IT Support xodimi yoki Manager) ──
 model User {
-  id        Int      @id @default(autoincrement())
-  fullName  String
-  phone     String   @unique
-  password  String   // bcrypt hash
-  role      String   @default("IT_SUPPORT") // IT_SUPPORT | MANAGER
-  token     String?  @unique  // sessiya tokeni (UUID)
-  createdAt DateTime @default(now())
-  tasks     Task[]   @relation("AssignedTo")
+  id               Int       @id @default(autoincrement())
+  fullName         String
+  phone            String    @unique
+  password         String    // bcrypt hash
+  role             String    @default("IT_SUPPORT") // IT_SUPPORT | MANAGER
+  telegramChatId   String?
+  createdAt        DateTime  @default(now())
+  tasks            Task[]    @relation("AssignedTo")
+  assignedProblems Problem[] @relation("AssignedWorker")
 }
 
 // ── Manager tomonidan IT Support xodimiga beriladigan topshiriq ──
