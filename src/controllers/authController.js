@@ -198,6 +198,8 @@ async function changePassword(req, res, next) {
   } catch (error) {
     next(error);
   }
+}
+
 // ─────────────────────────────────────────────
 // POST /api/auth/reset-users — Barcha userlarni tozalash (Admin secret bilan)
 // ─────────────────────────────────────────────
