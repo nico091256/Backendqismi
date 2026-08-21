@@ -1,0 +1,45 @@
+[
+  {
+    "id": 1787293857384,
+    "senderId": 6,
+    "senderName": "Nurillo Vaxobov",
+    "senderRole": "IT_SUPPORT",
+    "message": "dsadadsadsada",
+    "createdAt": "2026-08-21T06:30:57.384Z"
+  },
+  {
+    "id": 1787294040441,
+    "senderId": 6,
+    "senderName": "Nurillo Vaxobov",
+    "senderRole": "IT_SUPPORT",
+    "message": "dsadsad",
+    "createdAt": "2026-08-21T06:34:00.441Z"
+  },
+  {
+    "id": 1787294381245,
+    "senderId": 6,
+    "senderName": "Nurillo Vaxobov",
+    "senderRole": "IT_SUPPORT",
+    "message": "gdfgfdgdfg",
+    "image": null,
+    "createdAt": "2026-08-21T06:39:41.245Z"
+  },
+  {
+    "id": 1787294508465,
+    "senderId": 6,
+    "senderName": "Nurillo Vaxobov",
+    "senderRole": "IT_SUPPORT",
+    "message": "dasdasda",
+    "image": null,
+    "createdAt": "2026-08-21T06:41:48.465Z"
+  },
+  {
+    "id": 1787294826449,
+    "senderId": 7,
+    "senderName": "Nurillo Vaxobov",
+    "senderRole": "IT_SUPPORT",
+    "message": "DSDSDS",
+    "image": null,
+    "createdAt": "2026-08-21T06:47:06.449Z"
+  }
+]
