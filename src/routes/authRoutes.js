@@ -1,9 +1,25 @@
 const { Router } = require('express');
-const { register, login, logout, getMe, updateProfile, changePassword, resetAllUsers } = require('../controllers/authController');
-const { requireAuth } = require('../middlewares/authMiddleware');
+const { 
+  register, 
+  login, 
+  logout, 
+  getMe, 
+  updateProfile, 
+  changePassword, 
+  resetAllUsers,
+  getRegistrationStatus,
+  setRegistrationStatus
+} = require('../controllers/authController');
+const { requireAuth, requireManagerAuth } = require('../middlewares/authMiddleware');
 const { validate, registerSchema, loginSchema } = require('../middlewares/validateMiddleware');
 
 const router = Router();
+
+// GET /api/auth/registration-status — Registratsiya holatini tekshirish (Ochiq/Yopiq)
+router.get('/registration-status', getRegistrationStatus);
+
+// PATCH /api/auth/registration-status — Registratsiyani ochish/yopish (Faqat Manager)
+router.patch('/registration-status', requireManagerAuth, setRegistrationStatus);
 
 // POST /api/auth/register — Ro'yxatdan o'tish
 router.post('/register', validate(registerSchema), register);

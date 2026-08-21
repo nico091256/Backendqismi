@@ -1,8 +1,30 @@
+const fs     = require('fs');
+const path   = require('path');
 const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 
 const VALID_ROLES = ['IT_SUPPORT', 'MANAGER'];
+const SETTINGS_FILE = path.join(__dirname, '../data/systemSettings.json');
+
+function getSystemSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Error reading systemSettings.json:', e);
+  }
+  return { registrationOpen: true };
+}
+
+function saveSystemSettings(settings) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error saving systemSettings.json:', e);
+  }
+}
 
 // Telefon raqamni tozalash va standart formatga keltirish (+998901234567)
 function normalizePhone(raw) {
@@ -26,10 +48,51 @@ function signToken(user) {
 }
 
 // ─────────────────────────────────────────────
+// GET /api/auth/registration-status
+// ─────────────────────────────────────────────
+async function getRegistrationStatus(req, res) {
+  const settings = getSystemSettings();
+  return res.json({
+    success: true,
+    registrationOpen: settings.registrationOpen !== false
+  });
+}
+
+// ─────────────────────────────────────────────
+// PATCH /api/auth/registration-status (Manager)
+// ─────────────────────────────────────────────
+async function setRegistrationStatus(req, res) {
+  try {
+    const { registrationOpen } = req.body;
+    const settings = getSystemSettings();
+    settings.registrationOpen = Boolean(registrationOpen);
+    saveSystemSettings(settings);
+
+    return res.json({
+      success: true,
+      registrationOpen: settings.registrationOpen,
+      message: settings.registrationOpen 
+        ? "Yangi hisob yaratish (registratsiya) muvaffaqiyatli OCHILDI! 🔓"
+        : "Yangi hisob yaratish (registratsiya) muvaffaqiyatli YOPIB QO'YILDI! 🔒"
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─────────────────────────────────────────────
 // POST /api/auth/register
 // ─────────────────────────────────────────────
 async function register(req, res, next) {
   try {
+    const settings = getSystemSettings();
+    if (settings.registrationOpen === false) {
+      return res.status(403).json({
+        success: false,
+        message: "Hozirda yangi hisob yaratish rahbar tomonidan vaqtincha to'xtatilgan. Iltimos, rahbaringizga murojaat qiling."
+      });
+    }
+
     const { fullName, phone, password, role, managerCode } = req.body;
 
     // Validatsiya
@@ -219,6 +282,16 @@ async function resetAllUsers(req, res, next) {
   }
 }
 
-module.exports = { register, login, logout, getMe, updateProfile, changePassword, resetAllUsers };
+module.exports = { 
+  register, 
+  login, 
+  logout, 
+  getMe, 
+  updateProfile, 
+  changePassword, 
+  resetAllUsers,
+  getRegistrationStatus,
+  setRegistrationStatus
+};
 
 
