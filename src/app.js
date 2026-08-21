@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 const express    = require('express');
 const rateLimit  = require('express-rate-limit');
@@ -8,6 +8,7 @@ const authRoutes    = require('./routes/authRoutes');
 const taskRoutes    = require('./routes/taskRoutes');
 const userRoutes    = require('./routes/userRoutes');
 const statsRoutes   = require('./routes/statsRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 
 const app = express();
 
@@ -88,6 +89,7 @@ app.use('/api/tasks',    taskRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/users',    userRoutes);
 app.use('/api/stats',    statsRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 // ─────────────────────────────────────────────
 // 404 handler
