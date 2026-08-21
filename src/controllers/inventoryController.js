@@ -57,6 +57,12 @@ async function getAllInventory(req, res) {
       }
     }
 
+    items.sort((a, b) => {
+      const nameA = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'uz', { sensitivity: 'base' });
+    });
+
     res.json({
       success: true,
       total: items.length,
