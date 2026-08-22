@@ -193,6 +193,195 @@ async function getProblemById(req, res, next) {
   }
 }
 
+const fs = require('fs');
+const path = require('path');
+
+const INVENTORY_FILE_BACKEND = path.join(__dirname, '../data/inventoryData.json');
+const INVENTORY_FILE_FRONTEND = path.join(__dirname, '../../../frontend/src/data/inventoryData.json');
+
+function cyrillicToLatin(text) {
+  if (!text) return '';
+  let str = String(text);
+  const map = {
+    'ў': "o'", 'Ў': "O'", 'ғ': "g'", 'Ғ': "G'", 'ш': 'sh', 'Ш': 'Sh', 'ч': 'ch', 'Ч': 'Ch',
+    'ю': 'yu', 'Ю': 'Yu', 'я': 'ya', 'Ya': 'Ya', 'ё': 'yo', 'Ё': 'Yo', 'ж': 'j', 'Ж': 'J',
+    'х': 'x', 'Х': 'X', 'ҳ': 'h', 'Ҳ': 'H', 'қ': 'q', 'Қ': 'Q', 'э': 'e', 'Э': 'E',
+    'е': 'e', 'Е': 'E', 'а': 'a', 'А': 'A', 'б': 'b', 'Б': 'B', 'в': 'v', 'В': 'V',
+    'г': 'g', 'Г': 'G', 'д': 'd', 'Д': 'D', 'з': 'z', 'З': 'Z', 'и': 'i', 'И': 'I',
+    'й': 'y', 'Й': 'Y', 'к': 'k', 'К': 'K', 'л': 'l', 'Л': 'L', 'м': 'm', 'М': 'M',
+    'н': 'n', 'Н': 'N', 'о': 'o', 'О': 'O', 'п': 'p', 'П': 'P', 'р': 'r', 'Р': 'R',
+    'с': 's', 'С': 'S', 'т': 't', 'Т': 'T', 'у': 'u', 'У': 'U', 'ф': 'f', 'Ф': 'F',
+    'ц': 'ts', 'Ц': 'Ts', 'щ': 'sh', 'Щ': 'Sh', 'ъ': "'", 'Ъ': "'", 'ь': '', 'Ь': '',
+    'ы': 'i', 'Ы': 'I'
+  };
+  let res = '';
+  for (let i = 0; i < str.length; i++) {
+    res += map[str[i]] !== undefined ? map[str[i]] : str[i];
+  }
+  return res;
+}
+
+function normalizeName(name) {
+  if (!name) return '';
+  let latin = cyrillicToLatin(name).toLowerCase();
+  latin = latin.replace(/[`'ʻʼʽ]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = latin.split(' ').filter(w => !['ogli', 'og\'li', 'qizi', 'ugli', 'u', 'o', 'g', 'q', 'ovich', 'evich', 'ovna', 'evna'].includes(w));
+  return words.join(' ');
+}
+
+function toTitleCase(str) {
+  if (!str) return '';
+  return str.split(/([\s\-'])/).map(word => {
+    if (!word || /^[\s\-']$/.test(word)) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join('');
+}
+
+function formatPhone(phoneRaw) {
+  if (!phoneRaw) return { phone: '', rawPhone: '' };
+  let str = String(phoneRaw).replace(/\D/g, '');
+  if (!str) return { phone: '', rawPhone: '' };
+  if (str.length === 9) {
+    str = '998' + str;
+  }
+  if (str.length === 12 && str.startsWith('998')) {
+    const formatted = `+998 (${str.slice(3, 5)}) ${str.slice(5, 8)}-${str.slice(8, 10)}-${str.slice(10, 12)}`;
+    return { phone: formatted, rawPhone: str };
+  }
+  return { phone: String(phoneRaw).trim(), rawPhone: str };
+}
+
+function syncResolvedEquipmentToInventory(problem) {
+  try {
+    if (!fs.existsSync(INVENTORY_FILE_BACKEND)) return null;
+    const raw = fs.readFileSync(INVENTORY_FILE_BACKEND, 'utf-8');
+    const items = JSON.parse(raw);
+
+    const problemFullName = `${problem.lastName || ''} ${problem.firstName || ''} ${problem.middleName || ''}`.trim();
+    const probNorm = normalizeName(problemFullName);
+    const probWords = probNorm.split(' ').filter(w => w.length > 2);
+
+    let existingIndex = items.findIndex(it => {
+      const itNorm = normalizeName(it.fullName);
+      if (itNorm === probNorm) return true;
+      const itWords = itNorm.split(' ').filter(w => w.length > 2);
+      if (probWords.length >= 2 && itWords.length >= 2) {
+        if (probWords[0] === itWords[0] && probWords[1] === itWords[1]) return true;
+        if (probWords[0] === itWords[1] && probWords[1] === itWords[0]) return true;
+      }
+      if (problem.phone && it.rawPhone) {
+        const cleanProbPhone = String(problem.phone).replace(/\D/g, '');
+        if (cleanProbPhone.length >= 9 && it.rawPhone.includes(cleanProbPhone.slice(-9))) return true;
+      }
+      return false;
+    });
+
+    const itemDesc = problem.requestedItem || problem.description || '';
+    const isMonitor = /monitor|дюйм|artel|samsung|immer|lg|philips|avtech|redmi|viewsonic|22|24|27|32/i.test(itemDesc);
+    const isPrinter = /printer|принтер|canon|epson|hp\s*laser|pantum|xerox|mf3010|l1800|l1300/i.test(itemDesc);
+    const isLaptop = /laptop|noutbuk|ноутбук|vivobook|aspire|thinkpad|ideapad|macbook|probook/i.test(itemDesc);
+    const isPC = /kompyuter|компьютер|pc|tizim\s*blok|core\s*i|ryzen/i.test(itemDesc);
+
+    let updatedOrCreatedItem = null;
+
+    if (existingIndex !== -1) {
+      const current = items[existingIndex];
+      let monitor1 = current.monitor1 || '';
+      let monitor2 = current.monitor2 || '';
+      let printer = current.printer || '';
+      let pcSpecs = current.pcSpecs || '';
+      let deviceType = current.deviceType || 'PC';
+
+      if (isMonitor) {
+        if (!monitor1) {
+          monitor1 = toTitleCase(cyrillicToLatin(itemDesc));
+        } else if (!monitor2) {
+          monitor2 = toTitleCase(cyrillicToLatin(itemDesc));
+        } else {
+          monitor2 = `${monitor2}, ${toTitleCase(cyrillicToLatin(itemDesc))}`;
+        }
+      } else if (isPrinter) {
+        if (!printer) {
+          printer = toTitleCase(cyrillicToLatin(itemDesc));
+        } else {
+          printer = `${printer}, ${toTitleCase(cyrillicToLatin(itemDesc))}`;
+        }
+      } else if (isLaptop) {
+        deviceType = 'Laptop';
+        pcSpecs = pcSpecs ? `${pcSpecs} (${itemDesc})` : toTitleCase(cyrillicToLatin(itemDesc));
+      } else if (isPC) {
+        deviceType = 'PC';
+        pcSpecs = pcSpecs ? `${pcSpecs}, ${itemDesc}` : toTitleCase(cyrillicToLatin(itemDesc));
+      } else {
+        pcSpecs = pcSpecs ? `${pcSpecs} + ${itemDesc}` : toTitleCase(cyrillicToLatin(itemDesc));
+      }
+
+      const monitorCount = (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0);
+
+      items[existingIndex] = {
+        ...current,
+        phone: current.phone || formatPhone(problem.phone).phone,
+        rawPhone: current.rawPhone || formatPhone(problem.phone).rawPhone,
+        position: (!current.position || current.position === 'Xodim') && problem.position ? toTitleCase(cyrillicToLatin(problem.position)) : current.position,
+        objectName: (!current.objectName || current.objectName === 'Bosh ofis') && problem.objectName ? toTitleCase(cyrillicToLatin(problem.objectName)) : (current.objectName || 'Bosh ofis'),
+        monitor1,
+        monitor2,
+        monitorCount,
+        printer,
+        pcSpecs,
+        deviceType,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedOrCreatedItem = items[existingIndex];
+    } else {
+      const maxId = items.length > 0 ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
+      const phoneObj = formatPhone(problem.phone);
+
+      let monitor1 = isMonitor ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
+      let monitor2 = '';
+      let printer = isPrinter ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
+      let pcSpecs = (isPC || isLaptop || (!isMonitor && !isPrinter)) ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
+      let deviceType = isLaptop ? 'Laptop' : (isPC ? 'PC' : (pcSpecs ? 'PC' : "Noma'lum"));
+
+      const newItem = {
+        id: maxId,
+        lastName: toTitleCase(cyrillicToLatin(problem.lastName || '')),
+        firstName: toTitleCase(cyrillicToLatin(problem.firstName || '')),
+        middleName: toTitleCase(cyrillicToLatin(problem.middleName || '')),
+        fullName: `${toTitleCase(cyrillicToLatin(problem.lastName || ''))} ${toTitleCase(cyrillicToLatin(problem.firstName || ''))} ${toTitleCase(cyrillicToLatin(problem.middleName || ''))}`.trim(),
+        position: toTitleCase(cyrillicToLatin(problem.position || 'Xodim')),
+        objectName: toTitleCase(cyrillicToLatin(problem.objectName || 'Bosh ofis')),
+        phone: phoneObj.phone,
+        rawPhone: phoneObj.rawPhone,
+        pcSpecs,
+        deviceType,
+        monitor1,
+        monitor2,
+        monitorCount: (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0),
+        printer,
+        createdAt: new Date().toISOString(),
+      };
+
+      items.unshift(newItem);
+      updatedOrCreatedItem = newItem;
+    }
+
+    fs.writeFileSync(INVENTORY_FILE_BACKEND, JSON.stringify(items, null, 2), 'utf-8');
+    if (fs.existsSync(path.dirname(INVENTORY_FILE_FRONTEND))) {
+      try {
+        fs.writeFileSync(INVENTORY_FILE_FRONTEND, JSON.stringify(items, null, 2), 'utf-8');
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    return updatedOrCreatedItem;
+  } catch (err) {
+    console.error('Error syncing resolved equipment to inventory:', err);
+    return null;
+  }
+}
+
 // ─────────────────────────────────────────────
 // PATCH /api/problems/:id/resolve  –  Hal qilindi deb belgilash
 // ─────────────────────────────────────────────
@@ -225,7 +414,23 @@ async function resolveProblem(req, res, next) {
       },
     });
 
-    return res.json({ success: true, problem });
+    // Agar murojaat turi "Jihoz so'rovi" bo'lsa, xodim va jihozni avtomatik Inventarga sinxronlashtirish
+    let inventoryItem = null;
+    let inventorySynced = false;
+
+    if (problem.type === "Jihoz so'rovi") {
+      inventoryItem = syncResolvedEquipmentToInventory(problem);
+      if (inventoryItem) {
+        inventorySynced = true;
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      problem,
+      inventorySynced,
+      inventoryItem
+    });
   } catch (error) {
     next(error);
   }

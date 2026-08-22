@@ -28,13 +28,14 @@ function saveData(data) {
 async function getAllInventory(req, res) {
   try {
     let items = readData();
-    const { search, position, deviceType } = req.query;
+    const { search, position, deviceType, objectName } = req.query;
 
     if (search) {
       const s = search.toLowerCase().trim();
       items = items.filter(it => 
         (it.fullName && it.fullName.toLowerCase().includes(s)) ||
         (it.position && it.position.toLowerCase().includes(s)) ||
+        (it.objectName && it.objectName.toLowerCase().includes(s)) ||
         (it.phone && it.phone.includes(s)) ||
         (it.pcSpecs && it.pcSpecs.toLowerCase().includes(s)) ||
         (it.monitor1 && it.monitor1.toLowerCase().includes(s)) ||
@@ -45,6 +46,10 @@ async function getAllInventory(req, res) {
 
     if (position && position !== 'ALL') {
       items = items.filter(it => it.position === position);
+    }
+
+    if (objectName && objectName !== 'ALL') {
+      items = items.filter(it => it.objectName === objectName);
     }
 
     if (deviceType && deviceType !== 'ALL') {
@@ -85,9 +90,13 @@ async function getInventoryStats(req, res) {
     const printerCount = items.filter(it => it.printer && it.printer.trim().length > 0).length;
 
     const departmentCounts = {};
+    const objectCounts = {};
     items.forEach(it => {
       const pos = it.position || "Boshqa";
       departmentCounts[pos] = (departmentCounts[pos] || 0) + 1;
+
+      const obj = it.objectName || "Bosh ofis";
+      objectCounts[obj] = (objectCounts[obj] || 0) + 1;
     });
 
     res.json({
@@ -99,7 +108,8 @@ async function getInventoryStats(req, res) {
         dualMonitorCount,
         singleMonitorCount,
         printerCount,
-        departmentCounts
+        departmentCounts,
+        objectCounts
       }
     });
   } catch (err) {
@@ -110,7 +120,7 @@ async function getInventoryStats(req, res) {
 // POST /api/inventory
 async function createInventoryItem(req, res) {
   try {
-    const { lastName, firstName, middleName, position, phone, pcSpecs, monitor1, monitor2, printer } = req.body;
+    const { lastName, firstName, middleName, position, objectName, phone, pcSpecs, monitor1, monitor2, printer } = req.body;
     if (!lastName || !firstName) {
       return res.status(400).json({ success: false, message: "Familiya va ism majburiy!" });
     }
@@ -128,6 +138,7 @@ async function createInventoryItem(req, res) {
       middleName: (middleName || '').trim(),
       fullName: `${lastName} ${firstName} ${middleName || ''}`.trim(),
       position: (position || 'Xodim').trim(),
+      objectName: (objectName || 'Bosh ofis').trim(),
       phone: (phone || '').trim(),
       rawPhone: (phone || '').replace(/\D/g, ''),
       pcSpecs: (pcSpecs || '').trim(),
@@ -180,6 +191,7 @@ async function updateInventoryItem(req, res) {
       middleName,
       fullName: `${lastName} ${firstName} ${middleName}`.trim(),
       position: update.position !== undefined ? update.position.trim() : current.position,
+      objectName: update.objectName !== undefined ? update.objectName.trim() : (current.objectName || 'Bosh ofis'),
       phone: update.phone !== undefined ? update.phone.trim() : current.phone,
       pcSpecs,
       deviceType,
@@ -229,6 +241,7 @@ async function exportInventoryExcel(req, res) {
       { header: 'Familiya', key: 'lastName', width: 18 },
       { header: 'Ism', key: 'firstName', width: 16 },
       { header: 'Otasining ismi', key: 'middleName', width: 22 },
+      { header: 'Obyekt / Filial', key: 'objectName', width: 28 },
       { header: 'Lavozimi / Bo\'limi', key: 'position', width: 25 },
       { header: 'Telefon raqam', key: 'phone', width: 18 },
       { header: 'PC / Laptop Xarakteristikasi', key: 'pcSpecs', width: 45 },
@@ -252,6 +265,7 @@ async function exportInventoryExcel(req, res) {
         lastName: it.lastName,
         firstName: it.firstName,
         middleName: it.middleName,
+        objectName: it.objectName || 'Bosh ofis',
         position: it.position,
         phone: it.phone,
         pcSpecs: it.pcSpecs,
