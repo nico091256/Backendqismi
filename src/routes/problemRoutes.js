@@ -43,8 +43,8 @@ router.patch('/:id/resolve', requireAuth, resolveProblem);
 // PATCH  /api/problems/:id          – tahrirlash
 router.patch('/:id', requireAuth, updateProblem);
 
-// DELETE /api/problems/:id          – o'chirish
-router.delete('/:id', requireAuth, deleteProblem);
+// DELETE /api/problems/:id          – o'chirish (FAQAT MANAGER)
+router.delete('/:id', requireManagerAuth, deleteProblem);
 
 module.exports = router;
 
