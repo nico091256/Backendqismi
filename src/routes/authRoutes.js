@@ -39,8 +39,8 @@ router.patch('/profile', requireAuth, updateProfile);
 // PATCH /api/auth/change-password — Parol o'zgartirish
 router.patch('/change-password', requireAuth, changePassword);
 
-// POST /api/auth/reset-users — Barcha userlarni tozalash (Admin secret bilan)
-router.post('/reset-users', resetAllUsers);
+// POST /api/auth/reset-users — Barcha userlarni tozalash (Faqat Manager + maxfiy kod)
+router.post('/reset-users', requireManagerAuth, resetAllUsers);
 
 module.exports = router;
 

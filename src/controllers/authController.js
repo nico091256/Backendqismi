@@ -95,11 +95,14 @@ async function register(req, res, next) {
 
     const { fullName, phone, password, role, managerCode } = req.body;
 
+    // Parolni bir xil normallashtirish: login bilan mos bo'lishi uchun trim qilinadi
+    const cleanPassword = (password || '').trim();
+
     // Validatsiya
     if (!fullName?.trim())  return res.status(400).json({ success: false, message: 'Ism kiritilmagan' });
     if (!phone?.trim())     return res.status(400).json({ success: false, message: 'Telefon raqam kiritilmagan' });
-    if (!password?.trim())  return res.status(400).json({ success: false, message: 'Parol kiritilmagan' });
-    if (password.length < 4) return res.status(400).json({ success: false, message: "Parol kamida 4 ta belgidan iborat bo'lishi kerak" });
+    if (!cleanPassword)     return res.status(400).json({ success: false, message: 'Parol kiritilmagan' });
+    if (cleanPassword.length < 4) return res.status(400).json({ success: false, message: "Parol kamida 4 ta belgidan iborat bo'lishi kerak" });
 
     const cleanPhone = normalizePhone(phone);
 
@@ -130,8 +133,8 @@ async function register(req, res, next) {
       return res.status(409).json({ success: false, message: "Bu telefon raqam allaqachon ro'yxatdan o'tgan" });
     }
 
-    // Parolni hash qilish
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Parolni hash qilish (normallashtirilgan — trim qilingan)
+    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -176,7 +179,8 @@ async function login(req, res, next) {
       return res.status(401).json({ success: false, message: "Telefon raqam yoki parol noto'g'ri" });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Parolni register bilan bir xil normallashtirib solishtirish (trim)
+    const isMatch = await bcrypt.compare((password || '').trim(), user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Telefon raqam yoki parol noto'g'ri" });
     }
@@ -240,18 +244,22 @@ async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword) return res.status(400).json({ success: false, message: 'Joriy parol kiritilmagan' });
-    if (!newPassword)     return res.status(400).json({ success: false, message: 'Yangi parol kiritilmagan' });
-    if (newPassword.length < 4) return res.status(400).json({ success: false, message: 'Yangi parol kamida 4 ta belgidan iborat bo\'lishi kerak' });
+    // Login/register bilan bir xil normallashtirish (trim)
+    const cleanCurrent = (currentPassword || '').trim();
+    const cleanNew     = (newPassword || '').trim();
+
+    if (!cleanCurrent) return res.status(400).json({ success: false, message: 'Joriy parol kiritilmagan' });
+    if (!cleanNew)     return res.status(400).json({ success: false, message: 'Yangi parol kiritilmagan' });
+    if (cleanNew.length < 4) return res.status(400).json({ success: false, message: 'Yangi parol kamida 4 ta belgidan iborat bo\'lishi kerak' });
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
 
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    const isMatch = await bcrypt.compare(cleanCurrent, user.password);
     if (!isMatch) {
       return res.status(400).json({ success: false, message: 'Joriy parol noto\'g\'ri' });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(cleanNew, 10);
     await prisma.user.update({
       where: { id: req.user.id },
       data: { password: hashedPassword },
@@ -269,8 +277,8 @@ async function changePassword(req, res, next) {
 async function resetAllUsers(req, res, next) {
   try {
     const { secret } = req.body;
-    const validSecret = process.env.MANAGER_SECRET || 'mgr2026secret';
-    if (secret !== validSecret && secret !== 'mgr2026secret') {
+    const validSecret = process.env.MANAGER_SECRET;
+    if (!validSecret || secret !== validSecret) {
       return res.status(403).json({ success: false, message: "Maxfiy kod noto'g'ri" });
     }
     await prisma.task.deleteMany({});

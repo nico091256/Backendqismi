@@ -197,7 +197,6 @@ const fs = require('fs');
 const path = require('path');
 
 const INVENTORY_FILE_BACKEND = path.join(__dirname, '../data/inventoryData.json');
-const INVENTORY_FILE_FRONTEND = path.join(__dirname, '../../../frontend/src/data/inventoryData.json');
 
 function cyrillicToLatin(text) {
   if (!text) return '';
@@ -367,13 +366,6 @@ function syncResolvedEquipmentToInventory(problem) {
     }
 
     fs.writeFileSync(INVENTORY_FILE_BACKEND, JSON.stringify(items, null, 2), 'utf-8');
-    if (fs.existsSync(path.dirname(INVENTORY_FILE_FRONTEND))) {
-      try {
-        fs.writeFileSync(INVENTORY_FILE_FRONTEND, JSON.stringify(items, null, 2), 'utf-8');
-      } catch (err) {
-        // ignore
-      }
-    }
 
     return updatedOrCreatedItem;
   } catch (err) {
@@ -636,8 +628,9 @@ async function getStats(req, res, next) {
   try {
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
 
-    const yearStart = new Date(`${year}-01-01T00:00:00.000Z`);
-    const yearEnd   = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+    // Mahalliy vaqt (server TZ, masalan Asia/Tashkent) bo'yicha yil chegaralari
+    const yearStart = new Date(year, 0, 1, 0, 0, 0, 0);
+    const yearEnd   = new Date(year + 1, 0, 1, 0, 0, 0, 0);
 
     const all = await prisma.problem.findMany({
       where: { createdAt: { gte: yearStart, lt: yearEnd } },
@@ -656,7 +649,7 @@ async function getStats(req, res, next) {
       monthlyMap[m] = { month: MONTH_NAMES[m], total: 0, resolved: 0, new: 0, technical: 0, requests: 0 };
     }
     all.forEach((p) => {
-      const m = new Date(p.createdAt).getUTCMonth();
+      const m = new Date(p.createdAt).getMonth();
       monthlyMap[m].total++;
       if (p.status === 'RESOLVED') monthlyMap[m].resolved++;
       else monthlyMap[m].new++;

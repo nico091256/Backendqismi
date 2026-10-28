@@ -7,8 +7,12 @@ const {
   deleteInventoryItem,
   exportInventoryExcel
 } = require('../controllers/inventoryController');
+const { requireAuth } = require('../middlewares/authMiddleware');
 
 const router = Router();
+
+// Barcha inventar yo'llari tizimga kirgan xodimlar uchun
+router.use(requireAuth);
 
 // GET /api/inventory/stats – statistikalar
 router.get('/stats', getInventoryStats);

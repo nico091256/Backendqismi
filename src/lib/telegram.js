@@ -10,9 +10,9 @@ async function sendTelegramNotification(chatId, text) {
   if (token) {
     token = token.trim().replace(/^["']|["']$/g, '');
   }
-  // Agar Render.com da kiritilmagan bo'lsa zaxira token
   if (!token) {
-    token = '8974099262:AAHwpvd0kPMppTRxo1ZC0PcsgSqgOQDts2w';
+    console.warn('[Telegram] TELEGRAM_BOT_TOKEN .env da o\'rnatilmagan — xabar yuborilmadi');
+    return { success: false, reason: 'No token configured' };
   }
 
   if (!chatId) {
@@ -75,7 +75,8 @@ async function sendTelegramPhoto(chatId, photoBufferOrUrl, caption = '') {
     token = token.trim().replace(/^["']|["']$/g, '');
   }
   if (!token) {
-    token = '8974099262:AAHwpvd0kPMppTRxo1ZC0PcsgSqgOQDts2w';
+    console.warn('[Telegram] TELEGRAM_BOT_TOKEN .env da o\'rnatilmagan — rasm yuborilmadi');
+    return { success: false, reason: 'No token configured' };
   }
 
   if (!chatId) return { success: false, reason: 'No chatId' };
