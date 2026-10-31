@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const prisma = require('../lib/prisma');
-const { sendTelegramNotification } = require('../lib/telegram');
+const { notifyChatMessage } = require('../lib/notifications');
 
 const CHAT_DATA_FILE = path.join(__dirname, '../data/chatMessages.json');
 
@@ -64,34 +63,8 @@ async function sendChatMessage(req, res) {
     messages.push(newMessage);
     saveChatMessages(messages);
 
-    // ── Telegram Bot orqali barcha IT xodimlarga / guruhga xabar yuborish ──
-    const timeStr = new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
-    const roleIcon = sender.role === 'MANAGER' ? '👑 Manager' : '👨‍💻 IT Mutaxassis';
-    const textSnippet = message?.trim() ? `📝 <i>« ${message.trim()} »</i>\n` : '';
-    const imageSnippet = image ? `📸 <i>[Rasm biriktirilgan]</i>\n` : '';
-    const tgText = `💬 <b>IT Jamoa Chati — Yangi Xabar</b>\n\n👤 <b>${sender.fullName || 'Xodim'}</b> (${roleIcon})\n\n${textSnippet}${imageSnippet}\n🕒 ${timeStr} | ticket.di.uz/admin`;
-
-    try {
-      // 1. Agar .env da guruh ID bo'lsa
-      const groupChatId = process.env.TELEGRAM_CHAT_ID || process.env.TELEGRAM_GROUP_CHAT_ID;
-      if (groupChatId) {
-        sendTelegramNotification(groupChatId, tgText).catch(() => {});
-      }
-
-      // 2. Tizimdagi barcha telegram ulangan xodimlarga yuborish
-      const itUsers = await prisma.user.findMany({
-        where: { telegramChatId: { not: null } },
-        select: { telegramChatId: true, id: true }
-      });
-
-      itUsers
-        .filter(u => u.telegramChatId && u.telegramChatId.trim())
-        .forEach(u => {
-          sendTelegramNotification(u.telegramChatId.trim(), tgText).catch(() => {});
-        });
-    } catch (tgErr) {
-      console.warn('Telegram notification error in chat:', tgErr.message);
-    }
+    // Telegram: guruhga va barcha ulangan xodimlarga — fon rejimida
+    notifyChatMessage(sender, newMessage.message, Boolean(image));
 
     res.status(201).json({
       success: true,

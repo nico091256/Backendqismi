@@ -24,6 +24,14 @@ function saveData(data) {
   }
 }
 
+// Qo'shimcha jihozlar ro'yxatini normallashtirish (toza satrlar massivi)
+function normalizeExtraDevices(extraDevices) {
+  if (!Array.isArray(extraDevices)) return [];
+  return extraDevices
+    .map(d => (typeof d === 'string' ? d : (d && d.name) || '').trim())
+    .filter(Boolean);
+}
+
 // GET /api/inventory
 async function getAllInventory(req, res) {
   try {
@@ -32,7 +40,7 @@ async function getAllInventory(req, res) {
 
     if (search) {
       const s = search.toLowerCase().trim();
-      items = items.filter(it => 
+      items = items.filter(it =>
         (it.fullName && it.fullName.toLowerCase().includes(s)) ||
         (it.position && it.position.toLowerCase().includes(s)) ||
         (it.objectName && it.objectName.toLowerCase().includes(s)) ||
@@ -40,7 +48,10 @@ async function getAllInventory(req, res) {
         (it.pcSpecs && it.pcSpecs.toLowerCase().includes(s)) ||
         (it.monitor1 && it.monitor1.toLowerCase().includes(s)) ||
         (it.monitor2 && it.monitor2.toLowerCase().includes(s)) ||
-        (it.printer && it.printer.toLowerCase().includes(s))
+        (it.printer && it.printer.toLowerCase().includes(s)) ||
+        (it.keyboard && it.keyboard.toLowerCase().includes(s)) ||
+        (it.mouse && it.mouse.toLowerCase().includes(s)) ||
+        (Array.isArray(it.extraDevices) && it.extraDevices.some(d => String(d).toLowerCase().includes(s)))
       );
     }
 
@@ -120,7 +131,7 @@ async function getInventoryStats(req, res) {
 // POST /api/inventory
 async function createInventoryItem(req, res) {
   try {
-    const { lastName, firstName, middleName, position, objectName, phone, pcSpecs, monitor1, monitor2, printer } = req.body;
+    const { lastName, firstName, middleName, position, objectName, phone, pcSpecs, monitor1, monitor2, printer, keyboard, mouse, extraDevices } = req.body;
     if (!lastName || !firstName) {
       return res.status(400).json({ success: false, message: "Familiya va ism majburiy!" });
     }
@@ -147,6 +158,9 @@ async function createInventoryItem(req, res) {
       monitor2: (monitor2 || '').trim(),
       monitorCount: (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0),
       printer: (printer || '').trim(),
+      keyboard: (keyboard || '').trim(),
+      mouse: (mouse || '').trim(),
+      extraDevices: normalizeExtraDevices(extraDevices),
       createdAt: new Date().toISOString()
     };
 
@@ -199,6 +213,11 @@ async function updateInventoryItem(req, res) {
       monitor2,
       monitorCount: (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0),
       printer: update.printer !== undefined ? update.printer.trim() : current.printer,
+      keyboard: update.keyboard !== undefined ? update.keyboard.trim() : (current.keyboard || ''),
+      mouse: update.mouse !== undefined ? update.mouse.trim() : (current.mouse || ''),
+      extraDevices: update.extraDevices !== undefined
+        ? normalizeExtraDevices(update.extraDevices)
+        : (Array.isArray(current.extraDevices) ? current.extraDevices : []),
       updatedAt: new Date().toISOString()
     };
 
@@ -248,6 +267,9 @@ async function exportInventoryExcel(req, res) {
       { header: '1-Monitor', key: 'monitor1', width: 16 },
       { header: '2-Monitor', key: 'monitor2', width: 16 },
       { header: 'Printer / Qurilma', key: 'printer', width: 20 },
+      { header: 'Klaviatura', key: 'keyboard', width: 16 },
+      { header: 'Mishka', key: 'mouse', width: 16 },
+      { header: "Qo'shimcha jihozlar", key: 'extraDevices', width: 32 },
     ];
 
     // Style header row
@@ -272,6 +294,9 @@ async function exportInventoryExcel(req, res) {
         monitor1: it.monitor1,
         monitor2: it.monitor2,
         printer: it.printer,
+        keyboard: it.keyboard || '',
+        mouse: it.mouse || '',
+        extraDevices: Array.isArray(it.extraDevices) ? it.extraDevices.join(', ') : '',
       });
 
       if (index % 2 === 1) {

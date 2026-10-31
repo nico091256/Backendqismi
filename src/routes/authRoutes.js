@@ -1,14 +1,15 @@
 const { Router } = require('express');
-const { 
-  register, 
-  login, 
-  logout, 
-  getMe, 
-  updateProfile, 
-  changePassword, 
+const {
+  register,
+  login,
+  logout,
+  getMe,
+  updateProfile,
+  changePassword,
   resetAllUsers,
   getRegistrationStatus,
-  setRegistrationStatus
+  setRegistrationStatus,
+  getTelegramLink
 } = require('../controllers/authController');
 const { requireAuth, requireManagerAuth } = require('../middlewares/authMiddleware');
 const { validate, registerSchema, loginSchema } = require('../middlewares/validateMiddleware');
@@ -38,6 +39,9 @@ router.patch('/profile', requireAuth, updateProfile);
 
 // PATCH /api/auth/change-password — Parol o'zgartirish
 router.patch('/change-password', requireAuth, changePassword);
+
+// GET /api/auth/telegram-link — Telegram botni ulash havolasi (deep-link)
+router.get('/telegram-link', requireAuth, getTelegramLink);
 
 // POST /api/auth/reset-users — Barcha userlarni tozalash (Faqat Manager + maxfiy kod)
 router.post('/reset-users', requireManagerAuth, resetAllUsers);

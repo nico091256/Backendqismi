@@ -3,6 +3,7 @@ const path   = require('path');
 const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
+const { getBotUsername, buildDeepLink } = require('../lib/telegramBotRunner');
 
 const VALID_ROLES = ['IT_SUPPORT', 'MANAGER'];
 const SETTINGS_FILE = path.join(__dirname, '../data/systemSettings.json');
@@ -290,16 +291,44 @@ async function resetAllUsers(req, res, next) {
   }
 }
 
-module.exports = { 
-  register, 
-  login, 
-  logout, 
-  getMe, 
-  updateProfile, 
-  changePassword, 
+// ─────────────────────────────────────────────
+// GET /api/auth/telegram-link — Telegram botni ulash havolasi
+// ─────────────────────────────────────────────
+async function getTelegramLink(req, res, next) {
+  try {
+    const configured = Boolean((process.env.TELEGRAM_BOT_TOKEN || '').trim());
+    const botUsername = getBotUsername();
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, telegramChatId: true },
+    });
+
+    return res.json({
+      success: true,
+      configured,                                // token .env da bormi
+      botReady: Boolean(botUsername),            // bot getMe dan o'tdimi
+      botUsername: botUsername || null,
+      connected: Boolean(user?.telegramChatId),
+      chatId: user?.telegramChatId || null,
+      link: botUsername ? buildDeepLink(req.user.id) : null,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = {
+  register,
+  login,
+  logout,
+  getMe,
+  updateProfile,
+  changePassword,
   resetAllUsers,
   getRegistrationStatus,
-  setRegistrationStatus
+  setRegistrationStatus,
+  getTelegramLink
 };
 
 

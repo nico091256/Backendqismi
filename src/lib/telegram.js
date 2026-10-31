@@ -1,126 +1,140 @@
 const https = require('https');
 
-/**
- * Send a formatted message to a Telegram User/Chat
- * @param {string|number} chatId
- * @param {string} text (HTML supported)
- */
-async function sendTelegramNotification(chatId, text) {
+const DEFAULT_TIMEOUT_MS = 10000;
+
+// Tokenni .env dan olish (qo'shtirnoq va bo'sh joylardan tozalab)
+function getToken() {
   let token = process.env.TELEGRAM_BOT_TOKEN;
-  if (token) {
-    token = token.trim().replace(/^["']|["']$/g, '');
-  }
-  if (!token) {
-    console.warn('[Telegram] TELEGRAM_BOT_TOKEN .env da o\'rnatilmagan — xabar yuborilmadi');
-    return { success: false, reason: 'No token configured' };
-  }
+  if (token) token = token.trim().replace(/^["']|["']$/g, '');
+  return token || null;
+}
 
-  if (!chatId) {
-    return { success: false, reason: 'No chatId' };
-  }
-
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML',
-    });
-
-    const options = {
-      hostname: 'api.telegram.org',
-      port: 443,
-      path: '/bot' + token + '/sendMessage',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.ok) {
-            console.log('[Telegram Notification] Yuborildi:', chatId);
-            resolve({ success: true });
-          } else {
-            console.warn('[Telegram Notification Error]', parsed.description);
-            resolve({ success: false, reason: parsed.description });
-          }
-        } catch (e) {
-          resolve({ success: false, reason: e.message });
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      console.warn('[Telegram Connection Error]', err.message);
-      resolve({ success: false, reason: err.message });
-    });
-
-    req.write(payload);
-    req.end();
-  });
+// HTML parse_mode uchun dinamik (foydalanuvchi kiritgan) matnni xavfsizlash
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
- * Send photo to Telegram User/Chat
+ * Telegram Bot API ga umumiy so'rov.
+ * MUHIM: hech qachon reject qilmaydi — har doim { ok, ... } obyekti bilan resolve
+ * bo'ladi. Shu sababli Telegram xatosi (429, timeout, token yo'qligi) asosiy
+ * biznes-jarayonni hech qachon yiqitmaydi yoki orqaga qaytarmaydi.
  */
-async function sendTelegramPhoto(chatId, photoBufferOrUrl, caption = '') {
-  let token = process.env.TELEGRAM_BOT_TOKEN;
-  if (token) {
-    token = token.trim().replace(/^["']|["']$/g, '');
-  }
+function callTelegramApi(method, payload = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, silent = false } = {}) {
+  const token = getToken();
   if (!token) {
-    console.warn('[Telegram] TELEGRAM_BOT_TOKEN .env da o\'rnatilmagan — rasm yuborilmadi');
-    return { success: false, reason: 'No token configured' };
+    if (!silent) console.warn(`[Telegram] TELEGRAM_BOT_TOKEN o'rnatilmagan — ${method} bajarilmadi`);
+    return Promise.resolve({ ok: false, reason: 'No token configured' });
   }
 
-  if (!chatId) return { success: false, reason: 'No chatId' };
-
-  // If photo is a URL
-  if (typeof photoBufferOrUrl === 'string' && photoBufferOrUrl.startsWith('http')) {
-    return new Promise((resolve) => {
-      const payload = JSON.stringify({
-        chat_id: chatId,
-        photo: photoBufferOrUrl,
-        caption: caption,
-        parse_mode: 'HTML',
-      });
-
-      const options = {
+  return new Promise((resolve) => {
+    const body = JSON.stringify(payload);
+    const req = https.request(
+      {
         hostname: 'api.telegram.org',
         port: 443,
-        path: '/bot' + token + '/sendPhoto',
+        path: `/bot${token}/${method}`,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
+          'Content-Length': Buffer.byteLength(body),
         },
-      };
-
-      const req = https.request(options, (res) => {
+        timeout: timeoutMs,
+      },
+      (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
           try {
             const parsed = JSON.parse(data);
-            resolve({ success: parsed.ok });
-          } catch {
-            resolve({ success: false });
+            if (!parsed.ok && !silent) {
+              if (res.statusCode === 429) {
+                const retryAfter = parsed.parameters && parsed.parameters.retry_after;
+                console.warn(`[Telegram] Rate limit (429) — ${method}, retry_after=${retryAfter || '?'}s`);
+              } else {
+                console.warn(`[Telegram] ${method} xatosi:`, parsed.description || `HTTP ${res.statusCode}`);
+              }
+            }
+            resolve(parsed);
+          } catch (e) {
+            resolve({ ok: false, reason: "Javobni o'qib bo'lmadi: " + e.message });
           }
         });
-      });
-      req.on('error', () => resolve({ success: false }));
-      req.write(payload);
-      req.end();
-    });
-  }
+      }
+    );
 
-  return sendTelegramNotification(chatId, caption);
+    req.on('timeout', () => {
+      req.destroy(new Error(`Telegram API timeout (${timeoutMs}ms)`));
+    });
+    req.on('error', (err) => {
+      if (!silent) console.warn(`[Telegram] ulanish xatosi (${method}):`, err.message);
+      resolve({ ok: false, reason: err.message });
+    });
+
+    req.write(body);
+    req.end();
+  });
 }
 
-module.exports = { sendTelegramNotification, sendTelegramPhoto };
+/**
+ * Formatlangan xabar yuborish (HTML, havola-preview o'chirilgan).
+ * options.button = { text, url } berilsa, xabarga inline tugma biriktiriladi.
+ * @param {string|number} chatId
+ * @param {string} text (HTML; dinamik qismlar oldindan escapeHtml qilingan bo'lishi kerak)
+ */
+async function sendTelegramNotification(chatId, text, options = {}) {
+  try {
+    if (!chatId) return { success: false, reason: 'No chatId' };
+
+    const payload = {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    };
+    if (options.button && options.button.url) {
+      payload.reply_markup = {
+        inline_keyboard: [[{ text: options.button.text || '📄 Ochish', url: options.button.url }]],
+      };
+    }
+
+    const res = await callTelegramApi('sendMessage', payload);
+    if (res.ok) {
+      console.log('[Telegram Notification] Yuborildi:', chatId);
+      return { success: true };
+    }
+    return { success: false, reason: res.description || res.reason };
+  } catch (err) {
+    // callTelegramApi reject qilmaydi — bu qo'shimcha himoya qatlami xolos
+    console.warn('[Telegram Notification] kutilmagan xato:', err.message);
+    return { success: false, reason: err.message };
+  }
+}
+
+/** Rasm yuborish (URL ko'rinishida bo'lsa sendPhoto, aks holda matnli xabar) */
+async function sendTelegramPhoto(chatId, photoBufferOrUrl, caption = '') {
+  try {
+    if (!chatId) return { success: false, reason: 'No chatId' };
+
+    if (typeof photoBufferOrUrl === 'string' && photoBufferOrUrl.startsWith('http')) {
+      const res = await callTelegramApi('sendPhoto', {
+        chat_id: chatId,
+        photo: photoBufferOrUrl,
+        caption,
+        parse_mode: 'HTML',
+      });
+      return { success: Boolean(res.ok) };
+    }
+
+    return sendTelegramNotification(chatId, caption);
+  } catch (err) {
+    console.warn('[Telegram Photo] kutilmagan xato:', err.message);
+    return { success: false, reason: err.message };
+  }
+}
+
+module.exports = { sendTelegramNotification, sendTelegramPhoto, callTelegramApi, escapeHtml };

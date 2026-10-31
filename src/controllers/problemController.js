@@ -1,6 +1,6 @@
 const prisma = require('../lib/prisma');
 const ExcelJS = require('exceljs');
-const { sendTelegramNotification } = require('../lib/telegram');
+const { notifyNewProblem, notifyProblemAssigned } = require('../lib/notifications');
 
 // Ruxsat etilgan murojaat turlari
 const VALID_TYPES = ["Texnik muammo", "Jihoz so'rovi"];
@@ -98,33 +98,8 @@ async function createProblem(req, res, next) {
       },
     });
 
-    // Yangi murojaat kelib tushishi bilan barcha ulangan xodimlarga / botga bildirishnoma yuborish
-    try {
-      const usersWithTg = await prisma.user.findMany({
-        where: { telegramChatId: { not: null } },
-        select: { telegramChatId: true },
-      });
-
-      if (usersWithTg.length > 0) {
-        const isTM = problem.type === 'Texnik muammo';
-        const text = `🔔 <b>YANGI MUROJAAT KELIB TUSHDI!</b>\n\n` +
-          `📋 <b>Ticket:</b> <code>${problem.ticketNumber}</code> (${problem.type})\n` +
-          `👤 <b>Xodim:</b> ${problem.lastName} ${problem.firstName} ${problem.middleName || ''}\n` +
-          `🏢 <b>Obyekt / Bo'lim:</b> ${problem.objectName || '—'}\n` +
-          (isTM ? `🚪 <b>Xona:</b> ${problem.room || '—'} | 🖥️ <b>PC:</b> ${problem.computer || '—'}\n` : `📦 <b>Jihoz:</b> ${problem.requestedItem || '—'} (${problem.quantity || 1} ta)\n`) +
-          `📞 <b>Telefon:</b> ${problem.phone || '—'}\n\n` +
-          (problem.description ? `📝 <b>Tavsif:</b>\n<i>${problem.description}</i>\n\n` : '') +
-          `⏰ <b>Kelgan vaqti:</b> ${new Date().toLocaleString('uz-UZ')}`;
-
-        const promises = usersWithTg
-          .filter(u => u.telegramChatId && u.telegramChatId.trim())
-          .map(u => sendTelegramNotification(u.telegramChatId.trim(), text));
-
-        await Promise.allSettled(promises);
-      }
-    } catch (e) {
-      console.warn('[Telegram Broadcast Warn]', e.message);
-    }
+    // Barcha ulangan xodimlarga bildirishnoma — fon rejimida, javobni bloklamaydi
+    notifyNewProblem(problem);
 
     return res.status(201).json({ success: true, problem });
   } catch (error) {
@@ -280,6 +255,8 @@ function syncResolvedEquipmentToInventory(problem) {
     const isPrinter = /printer|принтер|canon|epson|hp\s*laser|pantum|xerox|mf3010|l1800|l1300/i.test(itemDesc);
     const isLaptop = /laptop|noutbuk|ноутбук|vivobook|aspire|thinkpad|ideapad|macbook|probook/i.test(itemDesc);
     const isPC = /kompyuter|компьютер|pc|tizim\s*blok|core\s*i|ryzen/i.test(itemDesc);
+    const isKeyboard = /klaviatura|keyboard|клавиатура/i.test(itemDesc);
+    const isMouse = /mishka|sichqoncha|mouse|мыш/i.test(itemDesc);
 
     let updatedOrCreatedItem = null;
 
@@ -290,6 +267,9 @@ function syncResolvedEquipmentToInventory(problem) {
       let printer = current.printer || '';
       let pcSpecs = current.pcSpecs || '';
       let deviceType = current.deviceType || 'PC';
+      let keyboard = current.keyboard || '';
+      let mouse = current.mouse || '';
+      const extraDevices = Array.isArray(current.extraDevices) ? [...current.extraDevices] : [];
 
       if (isMonitor) {
         if (!monitor1) {
@@ -311,8 +291,13 @@ function syncResolvedEquipmentToInventory(problem) {
       } else if (isPC) {
         deviceType = 'PC';
         pcSpecs = pcSpecs ? `${pcSpecs}, ${itemDesc}` : toTitleCase(cyrillicToLatin(itemDesc));
+      } else if (isKeyboard) {
+        keyboard = keyboard ? `${keyboard}, ${toTitleCase(cyrillicToLatin(itemDesc))}` : toTitleCase(cyrillicToLatin(itemDesc));
+      } else if (isMouse) {
+        mouse = mouse ? `${mouse}, ${toTitleCase(cyrillicToLatin(itemDesc))}` : toTitleCase(cyrillicToLatin(itemDesc));
       } else {
-        pcSpecs = pcSpecs ? `${pcSpecs} + ${itemDesc}` : toTitleCase(cyrillicToLatin(itemDesc));
+        // Boshqa turdagi jihozlar (UPS, naushnik, fleshka...) — qo'shimcha jihozlar ro'yxatiga
+        extraDevices.push(toTitleCase(cyrillicToLatin(itemDesc)));
       }
 
       const monitorCount = (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0);
@@ -327,6 +312,9 @@ function syncResolvedEquipmentToInventory(problem) {
         monitor2,
         monitorCount,
         printer,
+        keyboard,
+        mouse,
+        extraDevices,
         pcSpecs,
         deviceType,
         updatedAt: new Date().toISOString(),
@@ -336,11 +324,16 @@ function syncResolvedEquipmentToInventory(problem) {
       const maxId = items.length > 0 ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
       const phoneObj = formatPhone(problem.phone);
 
-      let monitor1 = isMonitor ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
+      const titleDesc = toTitleCase(cyrillicToLatin(itemDesc));
+      const isOtherDevice = !isMonitor && !isPrinter && !isPC && !isLaptop && !isKeyboard && !isMouse;
+      let monitor1 = isMonitor ? titleDesc : '';
       let monitor2 = '';
-      let printer = isPrinter ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
-      let pcSpecs = (isPC || isLaptop || (!isMonitor && !isPrinter)) ? toTitleCase(cyrillicToLatin(itemDesc)) : '';
-      let deviceType = isLaptop ? 'Laptop' : (isPC ? 'PC' : (pcSpecs ? 'PC' : "Noma'lum"));
+      let printer = isPrinter ? titleDesc : '';
+      let keyboard = isKeyboard ? titleDesc : '';
+      let mouse = isMouse ? titleDesc : '';
+      const extraDevices = (isOtherDevice && itemDesc) ? [titleDesc] : [];
+      let pcSpecs = (isPC || isLaptop) ? titleDesc : '';
+      let deviceType = isLaptop ? 'Laptop' : (isPC ? 'PC' : "Noma'lum");
 
       const newItem = {
         id: maxId,
@@ -358,6 +351,9 @@ function syncResolvedEquipmentToInventory(problem) {
         monitor2,
         monitorCount: (monitor1 ? 1 : 0) + (monitor2 ? 1 : 0),
         printer,
+        keyboard,
+        mouse,
+        extraDevices,
         createdAt: new Date().toISOString(),
       };
 
@@ -872,20 +868,8 @@ async function assignProblem(req, res, next) {
       include: { assignedUser: { select: { id: true, fullName: true, phone: true, telegramChatId: true } } },
     });
 
-    // Send Telegram Notification to the worker if telegramChatId is set
-    if (worker.telegramChatId) {
-      const isTM = problem.type === 'Texnik muammo';
-      const text = `📥 <b>SIZGA YANGI MUROJAAT BIRIKTIRILDI</b>\n\n` +
-        `📋 <b>Ticket:</b> <code>${problem.ticketNumber}</code> (${problem.type})\n` +
-        `👤 <b>Xodim:</b> ${problem.lastName} ${problem.firstName} ${problem.middleName || ''}\n` +
-        `🏢 <b>Obyekt:</b> ${problem.objectName || '—'}\n` +
-        (isTM ? `🚪 <b>Xona:</b> ${problem.room || '—'} | 🖥️ <b>PC:</b> ${problem.computer || '—'}\n` : `📦 <b>Jihoz:</b> ${problem.requestedItem || '—'} (${problem.quantity || 1} ta)\n`) +
-        `📞 <b>Telefon:</b> ${problem.phone || '—'}\n\n` +
-        (problem.description ? `📝 <b>Tavsif:</b>\n<i>${problem.description}</i>\n\n` : '') +
-        `⏰ <b>Biriktirilgan vaqt:</b> ${new Date().toLocaleString('uz-UZ')}`;
-
-      sendTelegramNotification(worker.telegramChatId, text).catch(() => {});
-    }
+    // Biriktirilgan xodimga bildirishnoma — fon rejimida
+    notifyProblemAssigned(worker, problem);
 
     return res.json({ success: true, problem });
   } catch (error) {
